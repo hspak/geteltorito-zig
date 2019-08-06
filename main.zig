@@ -1,6 +1,5 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const allocator = std.debug.global_allocator;
 const fmt = std.fmt;
 const File = std.fs.File;
 const io = std.io;
@@ -8,20 +7,28 @@ const mem = std.mem;
 const process = std.process;
 const warn = std.debug.warn;
 
-const VIRTUAL_SECTOR_SIZE = 512;
-const SECTOR_SIZE = 2048;
-const BOOT_SECTOR = 17;
+const VIRTUAL_SECTOR_SIZE: u32 = 512;
+const SECTOR_SIZE: u32 = 2048;
+const BOOT_SECTOR: u32 = 17;
 
 const FormatError = error{
     BadBootRecordIndicator,
     BadIso9660Identifier,
     BadBootSystemIdentifier,
+    BadHeaderValue,
+    BadReservedZeroValue,
     Bad55Checksum,
     BadAAChecksum,
     BadBootMediaType,
 };
 
+const WriteError = error{ReadEarlyExitError};
+
 pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.direct_allocator);
+    defer arena.deinit();
+    const allocator = &arena.allocator;
+
     var args_iter = process.args();
     var set_output_file = false;
     var output_filename: ?[]u8 = null;
@@ -97,7 +104,6 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     const iso_identifier = boot_entry[1..6];
     const desc_version = boot_entry[6];
     const spec = boot_entry[7..39];
-    const unused_1 = boot_entry[39..71];
     const boot_catalog_ptr = mem.readIntSliceNative(u32, boot_entry[71..75]);
 
     warn("==== Boot Record Volume ====\n");
@@ -114,7 +120,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
         return FormatError.BadIso9660Identifier;
     }
 
-    // mem.eql checks for length and spec is 32 bytes while the string is 23.
+    // mem.eql checks length equality and spec is 32 bytes while the string is 23.
     // the spec is zero-padded so we're using the slice for validation
     if (!mem.eql(u8, spec[0..23], "EL TORITO SPECIFICATION")) {
         return FormatError.BadBootSystemIdentifier;
@@ -133,18 +139,37 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     // Specification: https://pdos.csail.mit.edu/6.828/2018/readings/boot-cdrom.pdf, Page 9/20
     const header = catalog_entry[0];
     const platform = catalog_entry[1];
+    const reserved_zero = mem.readIntSliceNative(u16, catalog_entry[2..4]);
     const manufacturer = catalog_entry[4..28];
-    const checksum_zero = catalog_entry[28..30]; // TODO: sum of these two bytes are supposed to equal zero?
+
+    // TODO: sum of these two bytes are supposed to equal zero?
+    // The original geteltorio ignores these bytes also so...
+    const checksum_zero = catalog_entry[28..30];
+
     const five = catalog_entry[30];
     const aa = catalog_entry[31];
 
     warn("==== Validation Entry ====\n");
     warn("header: {X}\n", header);
+    warn("platform: ");
+    switch (platform) {
+        0 => warn("x86\n"),
+        1 => warn("PowerPC\n"),
+        2 => warn("Mac\n"),
+        else => warn("unknown\n"),
+    }
     warn("platform: {X}\n", platform);
+    warn("reserved_zero: {X}\n", reserved_zero);
     warn("manufacturer: {}\n", manufacturer);
     warn("five checksum: {X}\n", five);
     warn("aa checksum: {X}\n", aa);
 
+    if (header != 1) {
+        return error.BadHeaderValue;
+    }
+    if (reserved_zero != 0) {
+        return error.BadReservedZeroValue;
+    }
     if (five != 0x55) {
         return error.Bad55Checksum;
     }
@@ -168,7 +193,6 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     warn("system type: {X}\n", system_type);
     warn("sector count: {X}\n", sector_count);
     warn("image start: {}\n", image_start);
-    // ($boot, $media, $loadSegment, $systemType, $unUsed, $sCount, $imgStart, $unUsed)=unpack( "CCvCCvVC", $initialEntry);
 
     const real_count = switch (boot_media_type) {
         0 => blk: {
@@ -176,7 +200,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
             break :blk u32(0);
         },
         1 => blk: {
-            warn("boot media type is: 1.22meg floppy\n");
+            warn("boot media type is: 1.2meg floppy\n");
             break :blk (1200 * 1024) / VIRTUAL_SECTOR_SIZE;
         },
         2 => blk: {
@@ -189,13 +213,48 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
         },
         4 => blk: {
             warn("boot media type is: hard disk\n");
-            // TODO: starthere
-            break :blk 420;
+            var mbr_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
+            try iso_file.seekTo(image_start * SECTOR_SIZE);
+            const mbr_entry_bytes = iso_file.read(mbr_entry[0..]) catch |err| {
+                warn("Unable to read master boot record: {}\n", @errorName(err));
+                return err;
+            };
+            if (catalog_entry_bytes != VIRTUAL_SECTOR_SIZE) {
+                return error.ReadError;
+            }
+            const first_sector = mem.readIntSliceNative(u32, mbr_entry[454..458]);
+            const partition_size = mem.readIntSliceNative(u32, mbr_entry[458..462]);
+
+            warn("first_sector: {}\n", first_sector);
+            warn("partition_size: {}\n", partition_size);
+
+            break :blk first_sector + partition_size;
         },
         else => {
-            warn("unknown boot media emulation found\n");
+            warn("unknown boot media emulation found: {}\n", boot_media_type);
             return error.BadBootMediaType;
         },
     };
-    warn("calc count: {}\n", real_count);
+    warn("El Torito image starts at sector {} and has {} sector(s) of {} Bytes\n", image_start, real_count, VIRTUAL_SECTOR_SIZE);
+
+    var write_count: u64 = 0;
+    var image_blocks: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
+    try iso_file.seekTo(image_start * SECTOR_SIZE);
+    while (true) {
+        const image_read_bytes = iso_file.read(image_blocks[0..]) catch |err| {
+            warn("Unable to read image: {}\n", @errorName(err));
+            return err;
+        };
+        if (image_read_bytes == 0) {
+            return WriteError.ReadEarlyExitError;
+        }
+        const image_write_bytes = output_file.write(image_blocks[0..image_read_bytes]) catch |err| {
+            warn("Unable to write image: {}\n", @errorName(err));
+            return err;
+        };
+        write_count += 1;
+        if (write_count == real_count) {
+            break;
+        }
+    }
 }

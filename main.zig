@@ -235,7 +235,8 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
             return error.BadBootMediaType;
         },
     };
-    warn("El Torito image starts at sector {} and has {} sector(s) of {} Bytes\n", image_start, real_count, VIRTUAL_SECTOR_SIZE);
+    const count = if (real_count == 0) sector_count else real_count;
+    warn("El Torito image starts at sector {} and has {} sector(s) of {} Bytes\n", image_start, count, VIRTUAL_SECTOR_SIZE);
 
     var write_count: u64 = 0;
     var image_blocks: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
@@ -253,7 +254,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
             return err;
         };
         write_count += 1;
-        if (write_count == real_count) {
+        if (write_count == count) {
             break;
         }
     }

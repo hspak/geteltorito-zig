@@ -40,6 +40,8 @@ pub fn main() !void {
         if (set_output_file) {
             output_filename = arg;
             set_output_file = false;
+        } else if (mem.eql(u8, arg, "-h")) {
+            return usage(exe);
         } else if (mem.eql(u8, arg, "-v")) {
             warn("v0\n");
             return error.Invalid;

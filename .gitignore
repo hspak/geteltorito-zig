@@ -1,4 +1,4 @@
 *.o
-zig-cache
+zig-*
 main
 *.iso

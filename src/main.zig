@@ -72,7 +72,7 @@ pub fn main() !void {
 fn usage(exe: []const u8) !void {
     @setEvalBranchQuota(1500);
     const str =
-        \\{} [-h] [-v] [-o outputfilename] cd-image
+        \\{s} [-h] [-v] [-o outputfilename] cd-image
         \\Script will try to extract an El Torito image from a
         \\bootable CD (or cd-image) given by <cd-image> and write
         \\the data extracted to STDOUT or to a file.
@@ -87,7 +87,7 @@ fn usage(exe: []const u8) !void {
 
 fn unwrapArg(arg: anyerror![]u8) ![]u8 {
     return arg catch |err| {
-        warn("Unable to parse command line: {}\n", .{err});
+        warn("Unable to parse command line: {s}\n", .{err});
         return err;
     };
 }
@@ -96,7 +96,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     var boot_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(BOOT_SECTOR * SECTOR_SIZE);
     const boot_entry_bytes = iso_file.read(boot_entry[0..]) catch |err| {
-        warn("Unable to read boot sector: {}\n", .{@errorName(err)});
+        warn("Unable to read boot sector: {s}\n", .{@errorName(err)});
         return err;
     };
     if (boot_entry_bytes != VIRTUAL_SECTOR_SIZE) {
@@ -111,11 +111,11 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     const boot_catalog_ptr = mem.readIntSliceNative(u32, boot_entry[71..75]);
 
     warn("==== Boot Record Volume ====\n", .{});
-    warn("Boot Record Indicator: {}\n", .{boot_indicator});
-    warn("ISO 9660 identifier: {}\n", .{iso_identifier});
-    warn("Descriptor Version: {}\n", .{desc_version});
-    warn("Specification: {}\n", .{spec});
-    warn("Boot Catalog Pointer: {}\n", .{boot_catalog_ptr});
+    warn("Boot Record Indicator: {d}\n", .{boot_indicator});
+    warn("ISO 9660 identifier: {s}\n", .{iso_identifier});
+    warn("Descriptor Version: {d}\n", .{desc_version});
+    warn("Specification: {s}\n", .{spec});
+    warn("Boot Catalog Pointer: {d}\n", .{boot_catalog_ptr});
 
     if (boot_indicator != 0) {
         return FormatError.BadBootRecordIndicator;
@@ -133,7 +133,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     var catalog_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(boot_catalog_ptr * SECTOR_SIZE);
     const catalog_entry_bytes = iso_file.read(catalog_entry[0..]) catch |err| {
-        warn("Unable to read boot sector: {}\n", .{@errorName(err)});
+        warn("Unable to read boot sector: {s}\n", .{@errorName(err)});
         return err;
     };
     if (catalog_entry_bytes != VIRTUAL_SECTOR_SIZE) {
@@ -148,7 +148,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
 
     // TODO: sum of these two bytes are supposed to equal zero?
     // The original geteltorio ignores these bytes also so...
-    const checksum_zero = catalog_entry[28..30];
+    // const checksum_zero = catalog_entry[28..30];
 
     const five = catalog_entry[30];
     const aa = catalog_entry[31];
@@ -164,7 +164,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     }
     warn("platform: {X}\n", .{platform});
     warn("reserved_zero: {X}\n", .{reserved_zero});
-    warn("manufacturer: {}\n", .{manufacturer});
+    warn("manufacturer: {s}\n", .{manufacturer});
     warn("five checksum: {X}\n", .{five});
     warn("aa checksum: {X}\n", .{aa});
 
@@ -196,7 +196,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     warn("load segment: {X}\n", .{load_segment});
     warn("system type: {X}\n", .{system_type});
     warn("sector count: {X}\n", .{sector_count});
-    warn("image start: {}\n", .{image_start});
+    warn("image start: {d}\n", .{image_start});
 
     const real_count = switch (boot_media_type) {
         0 => blk: {
@@ -219,8 +219,8 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
             warn("boot media type is: hard disk\n", .{});
             var mbr_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
             try iso_file.seekTo(image_start * SECTOR_SIZE);
-            const mbr_entry_bytes = iso_file.read(mbr_entry[0..]) catch |err| {
-                warn("Unable to read master boot record: {}\n", .{@errorName(err)});
+            _ = iso_file.read(mbr_entry[0..]) catch |err| {
+                warn("Unable to read master boot record: {s}\n", .{@errorName(err)});
                 return err;
             };
             if (catalog_entry_bytes != VIRTUAL_SECTOR_SIZE) {
@@ -229,32 +229,32 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
             const first_sector = mem.readIntSliceNative(u32, mbr_entry[454..458]);
             const partition_size = mem.readIntSliceNative(u32, mbr_entry[458..462]);
 
-            warn("first_sector: {}\n", .{first_sector});
-            warn("partition_size: {}\n", .{partition_size});
+            warn("first_sector: {d}\n", .{first_sector});
+            warn("partition_size: {d}\n", .{partition_size});
 
             break :blk first_sector + partition_size;
         },
         else => {
-            warn("unknown boot media emulation found: {}\n", .{boot_media_type});
+            warn("unknown boot media emulation found: {d}\n", .{boot_media_type});
             return error.BadBootMediaType;
         },
     };
     const count = if (real_count == 0) sector_count else real_count;
-    warn("El Torito image starts at sector {} and has {} sector(s) of {} Bytes\n", .{ image_start, count, VIRTUAL_SECTOR_SIZE });
+    warn("El Torito image starts at sector {d} and has {d} sector(s) of {d} Bytes\n", .{ image_start, count, VIRTUAL_SECTOR_SIZE });
 
     var write_count: u64 = 0;
     var image_blocks: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(image_start * SECTOR_SIZE);
     while (true) {
         const image_read_bytes = iso_file.read(image_blocks[0..]) catch |err| {
-            warn("Unable to read image: {}\n", .{@errorName(err)});
+            warn("Unable to read image: {s}\n", .{@errorName(err)});
             return err;
         };
         if (image_read_bytes == 0) {
             return WriteError.ReadEarlyExitError;
         }
-        const image_write_bytes = output_file.write(image_blocks[0..image_read_bytes]) catch |err| {
-            warn("Unable to write image: {}\n", .{@errorName(err)});
+        _ = output_file.write(image_blocks[0..image_read_bytes]) catch |err| {
+            warn("Unable to write image: {s}\n", .{@errorName(err)});
             return err;
         };
         write_count += 1;

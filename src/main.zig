@@ -5,7 +5,6 @@ const fs = std.fs;
 const io = std.io;
 const mem = std.mem;
 const process = std.process;
-const warn = std.debug.warn;
 const File = fs.File;
 
 const VIRTUAL_SECTOR_SIZE: u32 = 512;
@@ -28,7 +27,7 @@ const WriteError = error{ReadEarlyExitError};
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = &arena.allocator;
+    const allocator = arena.allocator();
 
     var args_iter = process.args();
     var set_output_file = false;
@@ -44,7 +43,7 @@ pub fn main() !void {
         } else if (mem.eql(u8, arg, "-h")) {
             return usage(exe);
         } else if (mem.eql(u8, arg, "-v")) {
-            warn("v0\n", .{});
+            std.debug.print("v0\n", .{});
             return error.Invalid;
         } else if (mem.eql(u8, arg, "-o")) {
             set_output_file = true;
@@ -81,13 +80,13 @@ fn usage(exe: []const u8) !void {
         \\   -o <file>: Write extracted data to file <file> instead of STDOUT
         \\
     ;
-    warn(str, .{exe});
+    std.debug.print(str, .{exe});
     return error.Invalid;
 }
 
 fn unwrapArg(arg: anyerror![]u8) ![]u8 {
     return arg catch |err| {
-        warn("Unable to parse command line: {s}\n", .{err});
+        std.debug.print("Unable to parse command line: {s}\n", .{err});
         return err;
     };
 }
@@ -96,7 +95,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     var boot_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(BOOT_SECTOR * SECTOR_SIZE);
     const boot_entry_bytes = iso_file.read(boot_entry[0..]) catch |err| {
-        warn("Unable to read boot sector: {s}\n", .{@errorName(err)});
+        std.debug.print("Unable to read boot sector: {s}\n", .{@errorName(err)});
         return err;
     };
     if (boot_entry_bytes != VIRTUAL_SECTOR_SIZE) {
@@ -110,12 +109,12 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     const spec = boot_entry[7..39];
     const boot_catalog_ptr = mem.readIntSliceNative(u32, boot_entry[71..75]);
 
-    warn("==== Boot Record Volume ====\n", .{});
-    warn("Boot Record Indicator: {d}\n", .{boot_indicator});
-    warn("ISO 9660 identifier: {s}\n", .{iso_identifier});
-    warn("Descriptor Version: {d}\n", .{desc_version});
-    warn("Specification: {s}\n", .{spec});
-    warn("Boot Catalog Pointer: {d}\n", .{boot_catalog_ptr});
+    std.debug.print("==== Boot Record Volume ====\n", .{});
+    std.debug.print("Boot Record Indicator: {d}\n", .{boot_indicator});
+    std.debug.print("ISO 9660 identifier: {s}\n", .{iso_identifier});
+    std.debug.print("Descriptor Version: {d}\n", .{desc_version});
+    std.debug.print("Specification: {s}\n", .{spec});
+    std.debug.print("Boot Catalog Pointer: {d}\n", .{boot_catalog_ptr});
 
     if (boot_indicator != 0) {
         return FormatError.BadBootRecordIndicator;
@@ -133,7 +132,7 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     var catalog_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(boot_catalog_ptr * SECTOR_SIZE);
     const catalog_entry_bytes = iso_file.read(catalog_entry[0..]) catch |err| {
-        warn("Unable to read boot sector: {s}\n", .{@errorName(err)});
+        std.debug.print("Unable to read boot sector: {s}\n", .{@errorName(err)});
         return err;
     };
     if (catalog_entry_bytes != VIRTUAL_SECTOR_SIZE) {
@@ -153,20 +152,20 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     const five = catalog_entry[30];
     const aa = catalog_entry[31];
 
-    warn("==== Validation Entry ====\n", .{});
-    warn("header: {X}\n", .{header});
-    warn("platform: ", .{});
+    std.debug.print("==== Validation Entry ====\n", .{});
+    std.debug.print("header: {X}\n", .{header});
+    std.debug.print("platform: ", .{});
     switch (platform) {
-        0 => warn("x86\n", .{}),
-        1 => warn("PowerPC\n", .{}),
-        2 => warn("Mac\n", .{}),
-        else => warn("unknown\n", .{}),
+        0 => std.debug.print("x86\n", .{}),
+        1 => std.debug.print("PowerPC\n", .{}),
+        2 => std.debug.print("Mac\n", .{}),
+        else => std.debug.print("unknown\n", .{}),
     }
-    warn("platform: {X}\n", .{platform});
-    warn("reserved_zero: {X}\n", .{reserved_zero});
-    warn("manufacturer: {s}\n", .{manufacturer});
-    warn("five checksum: {X}\n", .{five});
-    warn("aa checksum: {X}\n", .{aa});
+    std.debug.print("platform: {X}\n", .{platform});
+    std.debug.print("reserved_zero: {X}\n", .{reserved_zero});
+    std.debug.print("manufacturer: {s}\n", .{manufacturer});
+    std.debug.print("five checksum: {X}\n", .{five});
+    std.debug.print("aa checksum: {X}\n", .{aa});
 
     if (header != 1) {
         return error.BadHeaderValue;
@@ -190,37 +189,37 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
     const sector_count = mem.readIntSliceNative(u16, initial_entry[6..8]);
     const image_start = mem.readIntSliceNative(u32, initial_entry[8..12]);
 
-    warn("==== Initial (default) Entry ====\n", .{});
-    warn("bootable: {X}\n", .{bootable});
-    warn("boot media type: {X}\n", .{boot_media_type});
-    warn("load segment: {X}\n", .{load_segment});
-    warn("system type: {X}\n", .{system_type});
-    warn("sector count: {X}\n", .{sector_count});
-    warn("image start: {d}\n", .{image_start});
+    std.debug.print("==== Initial (default) Entry ====\n", .{});
+    std.debug.print("bootable: {X}\n", .{bootable});
+    std.debug.print("boot media type: {X}\n", .{boot_media_type});
+    std.debug.print("load segment: {X}\n", .{load_segment});
+    std.debug.print("system type: {X}\n", .{system_type});
+    std.debug.print("sector count: {X}\n", .{sector_count});
+    std.debug.print("image start: {d}\n", .{image_start});
 
     const real_count = switch (boot_media_type) {
         0 => blk: {
-            warn("no boot media emulation found\n", .{});
+            std.debug.print("no boot media emulation found\n", .{});
             break :blk @intCast(u32, 0);
         },
         1 => blk: {
-            warn("boot media type is: 1.2meg floppy\n", .{});
+            std.debug.print("boot media type is: 1.2meg floppy\n", .{});
             break :blk (1200 * 1024) / VIRTUAL_SECTOR_SIZE;
         },
         2 => blk: {
-            warn("boot media type is: 1.44meg floppy\n", .{});
+            std.debug.print("boot media type is: 1.44meg floppy\n", .{});
             break :blk (1440 * 1024) / VIRTUAL_SECTOR_SIZE;
         },
         3 => blk: {
-            warn("boot media type is: 2.88meg floppy\n", .{});
+            std.debug.print("boot media type is: 2.88meg floppy\n", .{});
             break :blk (2880 * 1024) / VIRTUAL_SECTOR_SIZE;
         },
         4 => blk: {
-            warn("boot media type is: hard disk\n", .{});
+            std.debug.print("boot media type is: hard disk\n", .{});
             var mbr_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
             try iso_file.seekTo(image_start * SECTOR_SIZE);
             _ = iso_file.read(mbr_entry[0..]) catch |err| {
-                warn("Unable to read master boot record: {s}\n", .{@errorName(err)});
+                std.debug.print("Unable to read master boot record: {s}\n", .{@errorName(err)});
                 return err;
             };
             if (catalog_entry_bytes != VIRTUAL_SECTOR_SIZE) {
@@ -229,32 +228,32 @@ fn writeImage(iso_file: *File, output_file: *File) !void {
             const first_sector = mem.readIntSliceNative(u32, mbr_entry[454..458]);
             const partition_size = mem.readIntSliceNative(u32, mbr_entry[458..462]);
 
-            warn("first_sector: {d}\n", .{first_sector});
-            warn("partition_size: {d}\n", .{partition_size});
+            std.debug.print("first_sector: {d}\n", .{first_sector});
+            std.debug.print("partition_size: {d}\n", .{partition_size});
 
             break :blk first_sector + partition_size;
         },
         else => {
-            warn("unknown boot media emulation found: {d}\n", .{boot_media_type});
+            std.debug.print("unknown boot media emulation found: {d}\n", .{boot_media_type});
             return error.BadBootMediaType;
         },
     };
     const count = if (real_count == 0) sector_count else real_count;
-    warn("El Torito image starts at sector {d} and has {d} sector(s) of {d} Bytes\n", .{ image_start, count, VIRTUAL_SECTOR_SIZE });
+    std.debug.print("El Torito image starts at sector {d} and has {d} sector(s) of {d} Bytes\n", .{ image_start, count, VIRTUAL_SECTOR_SIZE });
 
     var write_count: u64 = 0;
     var image_blocks: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(image_start * SECTOR_SIZE);
     while (true) {
         const image_read_bytes = iso_file.read(image_blocks[0..]) catch |err| {
-            warn("Unable to read image: {s}\n", .{@errorName(err)});
+            std.debug.print("Unable to read image: {s}\n", .{@errorName(err)});
             return err;
         };
         if (image_read_bytes == 0) {
             return WriteError.ReadEarlyExitError;
         }
         _ = output_file.write(image_blocks[0..image_read_bytes]) catch |err| {
-            warn("Unable to write image: {s}\n", .{@errorName(err)});
+            std.debug.print("Unable to write image: {s}\n", .{@errorName(err)});
             return err;
         };
         write_count += 1;

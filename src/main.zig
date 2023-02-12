@@ -31,12 +31,12 @@ pub fn main() !void {
 
     var args_iter = process.args();
     var set_output_file = false;
-    var output_filename: ?[]u8 = null;
-    var iso_filename: ?[]u8 = null;
+    var output_filename: ?[:0]const u8 = null;
+    var iso_filename: ?[:0]const u8 = null;
 
-    const exe = try unwrapArg(args_iter.next(allocator).?);
-    while (args_iter.next(allocator)) |arg_or_err| {
-        const arg = try unwrapArg(arg_or_err);
+    const args = try process.argsAlloc(allocator);
+    const exe = args[0];
+    while (args_iter.next()) |arg| {
         if (set_output_file) {
             output_filename = arg;
             set_output_file = false;
@@ -63,7 +63,7 @@ pub fn main() !void {
         var stdout_file = &io.getStdOut();
         return writeImage(&iso_file, stdout_file);
     }
-    var output_file = try cwd.openFile(output_filename.?, .{ .write = true });
+    var output_file = try cwd.openFile(output_filename.?, .{ .mode = .write_only });
     defer output_file.close();
     return writeImage(&iso_file, &output_file);
 }
@@ -81,7 +81,7 @@ fn usage(exe: []const u8) !void {
         \\
     ;
     std.debug.print(str, .{exe});
-    return error.Invalid;
+    return;
 }
 
 fn unwrapArg(arg: anyerror![]u8) ![]u8 {
@@ -91,7 +91,7 @@ fn unwrapArg(arg: anyerror![]u8) ![]u8 {
     };
 }
 
-fn writeImage(iso_file: *File, output_file: *File) !void {
+fn writeImage(iso_file: *const File, output_file: *const File) !void {
     var boot_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(BOOT_SECTOR * SECTOR_SIZE);
     const boot_entry_bytes = iso_file.read(boot_entry[0..]) catch |err| {

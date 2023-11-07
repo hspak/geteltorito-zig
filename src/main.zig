@@ -200,7 +200,7 @@ fn writeImage(iso_file: *const File, output_file: *const File) !void {
     const real_count = switch (boot_media_type) {
         0 => blk: {
             std.debug.print("no boot media emulation found\n", .{});
-            break :blk @intCast(u32, 0);
+            break :blk 0;
         },
         1 => blk: {
             std.debug.print("boot media type is: 1.2meg floppy\n", .{});

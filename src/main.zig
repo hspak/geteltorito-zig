@@ -24,6 +24,11 @@ const FormatError = error{
 
 const WriteError = error{ReadEarlyExitError};
 
+fn readIntSliceNative(comptime T: type, buffer: *const [@divExact(@typeInfo(T).Int.bits, 8)]u8) T {
+    const native_endian = builtin.cpu.arch.endian();
+    return mem.readInt(T, buffer, native_endian);
+}
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -107,7 +112,7 @@ fn writeImage(iso_file: *const File, output_file: *const File) !void {
     const iso_identifier = boot_entry[1..6];
     const desc_version = boot_entry[6];
     const spec = boot_entry[7..39];
-    const boot_catalog_ptr = mem.readIntSliceNative(u32, boot_entry[71..75]);
+    const boot_catalog_ptr = readIntSliceNative(u32, boot_entry[71..75]);
 
     std.debug.print("==== Boot Record Volume ====\n", .{});
     std.debug.print("Boot Record Indicator: {d}\n", .{boot_indicator});
@@ -142,7 +147,7 @@ fn writeImage(iso_file: *const File, output_file: *const File) !void {
     // Specification: https://pdos.csail.mit.edu/6.828/2018/readings/boot-cdrom.pdf, Page 9/20
     const header = catalog_entry[0];
     const platform = catalog_entry[1];
-    const reserved_zero = mem.readIntSliceNative(u16, catalog_entry[2..4]);
+    const reserved_zero = readIntSliceNative(u16, catalog_entry[2..4]);
     const manufacturer = catalog_entry[4..28];
 
     // TODO: sum of these two bytes are supposed to equal zero?
@@ -184,10 +189,10 @@ fn writeImage(iso_file: *const File, output_file: *const File) !void {
     const initial_entry: []u8 = catalog_entry[32..64];
     const bootable = initial_entry[0];
     const boot_media_type = initial_entry[1];
-    const load_segment = mem.readIntSliceNative(u16, initial_entry[2..4]);
+    const load_segment = readIntSliceNative(u16, initial_entry[2..4]);
     const system_type = initial_entry[4];
-    const sector_count = mem.readIntSliceNative(u16, initial_entry[6..8]);
-    const image_start = mem.readIntSliceNative(u32, initial_entry[8..12]);
+    const sector_count = readIntSliceNative(u16, initial_entry[6..8]);
+    const image_start = readIntSliceNative(u32, initial_entry[8..12]);
 
     std.debug.print("==== Initial (default) Entry ====\n", .{});
     std.debug.print("bootable: {X}\n", .{bootable});
@@ -225,8 +230,8 @@ fn writeImage(iso_file: *const File, output_file: *const File) !void {
             if (catalog_entry_bytes != VIRTUAL_SECTOR_SIZE) {
                 return error.ReadError;
             }
-            const first_sector = mem.readIntSliceNative(u32, mbr_entry[454..458]);
-            const partition_size = mem.readIntSliceNative(u32, mbr_entry[458..462]);
+            const first_sector = readIntSliceNative(u32, mbr_entry[454..458]);
+            const partition_size = readIntSliceNative(u32, mbr_entry[458..462]);
 
             std.debug.print("first_sector: {d}\n", .{first_sector});
             std.debug.print("partition_size: {d}\n", .{partition_size});

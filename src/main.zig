@@ -65,7 +65,7 @@ pub fn main() !void {
     defer iso_file.close();
 
     if (output_filename == null) {
-        var stdout_file = &io.getStdOut();
+        const stdout_file = &io.getStdOut();
         return writeImage(&iso_file, stdout_file);
     }
     var output_file = try cwd.openFile(output_filename.?, .{ .mode = .write_only });

@@ -24,7 +24,7 @@ const FormatError = error{
 
 const WriteError = error{ReadEarlyExitError};
 
-fn readIntSliceNative(comptime T: type, buffer: *const [@divExact(@typeInfo(T).Int.bits, 8)]u8) T {
+fn readIntSliceNative(comptime T: type, buffer: *const [@divExact(@typeInfo(T).int.bits, 8)]u8) T {
     const native_endian = builtin.cpu.arch.endian();
     return mem.readInt(T, buffer, native_endian);
 }

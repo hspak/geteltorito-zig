@@ -64,13 +64,16 @@ pub fn main() !void {
     var iso_file = try cwd.openFile(iso_filename.?, .{});
     defer iso_file.close();
 
+    var output_buffer: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     if (output_filename == null) {
-        const stdout_file = &io.getStdOut();
-        return writeImage(&iso_file, stdout_file);
+        const stdout_handle = std.fs.File.stdout();
+        var stdout_writer = stdout_handle.writer(&output_buffer);
+        return writeImage(&iso_file, &stdout_writer.interface);
     }
     var output_file = try cwd.openFile(output_filename.?, .{ .mode = .write_only });
+    var output_writer = output_file.writer(&output_buffer);
     defer output_file.close();
-    return writeImage(&iso_file, &output_file);
+    return writeImage(&iso_file, &output_writer.interface);
 }
 
 fn usage(exe: []const u8) !void {
@@ -96,7 +99,7 @@ fn unwrapArg(arg: anyerror![]u8) ![]u8 {
     };
 }
 
-fn writeImage(iso_file: *const File, output_file: *const File) !void {
+fn writeImage(iso_file: *const File, output_file: *std.io.Writer) !void {
     var boot_entry: [VIRTUAL_SECTOR_SIZE]u8 = undefined;
     try iso_file.seekTo(BOOT_SECTOR * SECTOR_SIZE);
     const boot_entry_bytes = iso_file.read(boot_entry[0..]) catch |err| {
@@ -266,4 +269,5 @@ fn writeImage(iso_file: *const File, output_file: *const File) !void {
             break;
         }
     }
+    try output_file.flush();
 }
